@@ -6,7 +6,7 @@ program define eoutput1, rclass
 
 	version 14
 	
-	syntax varlist [if] [in] using/, [ sheet(string) Format(string) replace modify]
+	syntax varlist(min=1 max=1) [if] [in] using/, [ sheet(string) Format(string) replace modify]
 	
 	*~~~~~~~~~~~~~~~ export to Excel ~~~~~~~~~~~~~~~*
 	* --> export both data and labels to Excel; that is the most intense part due to write opearions; takes ~90% computational time
@@ -28,53 +28,70 @@ program define eoutput1, rclass
 
 	local row=2
 	
-	gettoken var1 : `varlist'	
-		*Variables cat
-	qui: sum `var1'
-	forvalues g = `r(min)'/`r(max)' {	
-		putexcel A`row' = ("`var1'==`g'")
-		local ++row
+	qui: sum `varlist'
+	putexcel A`row'=("`varlist'")		
+	
+	local var_lab : var label `varlist'
+	local row1 = `row'+1
+	putexcel A`row1' = ("`var_lab'")
+	
+	local rowvar = `row'										/*Keep the starting row as a reference*/	
+	
+	if `r(min)'==1 {
+		loc nbrow = `r(max)'
+	}
+	else {
+		loc nbrow = `r(max)'+1
+	}
+	
+	matrix mat1 = J(`nbrow',3,.)
+	
+	forvalues i = `r(min)'/`r(max)' {							/*creates table for every possible value of every variable above*/			
+		local val_lab : value label `varlist'					/*puts name of value label in a macro*/
+		local val_lab`i' : label `val_lab' `i'					/*puts indivual value labels in a macro*/
+		local allval_lab = "`val_lab`i''"
+	}	
+
+	local row = `rowvar'										/*goes back from the start of labels, to input results*/
+	
+	qui: sum `varlist'
+	forvalues i = `r(min)'/`r(max)' {
+		if `i' == 0 {
+			matrix mat1[`i'+1,1] = `i'
+		}
+		else {
+			matrix mat1[`i',1] = `i'
+		}
 		
-		foreach var of varlist `var1' {
-			qui: sum `var1'												/*creates macro with the number of the variable's categories in it*/
-
-			putexcel A`row'=("`var1'")		
-			
-			local var_lab : var label `var1'
-			local row1 = `row'+1
-			putexcel A`row1' = ("`var_lab'")
-			
-			local rowvar = `row'										/*Keep the starting row as a reference*/	
+		qui: tab1 `varlist' if `varlist'==`i'
+		loc n`i' = `r(N)'
+		if `i' == 0 {
+			matrix mat1[`i'+1,2] = `n`i''
+		}
+		else {
+			matrix mat1[`i',2] = `n`i''
+		}
 		
-			forvalues i = `r(min)'/`r(max)' {							/*creates table for every possible value of every variable above*/			
-
-				local val_lab : value label `var'						/*puts name of value label in a macro*/
-				local val_lab`i' : label `val_lab' `i'					/*puts indivual value labels in a macro*/
-			}	
-
-			local row = `rowvar'										/*goes back from the start of labels, to input results*/
-			
-			qui: svy: tab ``m'' ``k'', count
-			qui: ereturn display										/*Creates matrix of results r(table)*/
-			mat res = r(table)
-			loc nbcol = colsof(res)
-			
-			qui: sum `var'
-			forvalues i = `r(min)'/`nbcol' {
-				loc br = round(res[1,`i'], 0.01)						/*return results. line 1 = coef, line 5 & 6 = 95% CI*/
-				loc b = res[1,`i']
-				loc ll = round(res[5,`i'], 0.01)
-				loc ul = round(res[6,`i'], 0.01)
-				loc se = res[2,`i']
-				loc cv = `se'/`b'
-				
-				putexcel D`row'=("`br' (`ll' - `ul')")
-				putexcel F`row'=("`cv'")
-				
-				local ++row
-			}
+		qui: tab1 `varlist',m
+		loc N`i' = `r(N)'
+		
+		loc per`i' = round(`n`i''/`N`i''*100, 0.1)
+		if `i' == 0 {
+			matrix mat1[`i'+1,3] = `per`i''
+		}
+		else {
+			matrix mat1[`i',3] = `per`i''
 		}
 	}
+	
+	forvalues i = `r(min)'/`r(max)'
+		matrix rownames mat1 = "`allval_lab'"
+	
+	matrix colnames mat1 = value N %
+
+	mat li mat1
+	*putexcel B`row' = (matrix(mat1), names)
+	local row = row + `i' +1
 }
 
 end
